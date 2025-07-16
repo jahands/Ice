@@ -41,8 +41,18 @@ final class MenuBarItemImageCache: ObservableObject {
 
         if let appState {
             Publishers.Merge3(
-                // Update every 15 seconds at minimum (reduced from 3 seconds to lower CPU usage).
-                Timer.publish(every: 15, on: .main, in: .default).autoconnect().mapToVoid(),
+                // Update every 30 seconds at minimum (reduced from 15 seconds to lower CPU usage).
+                // Only run when Ice is actively being used to minimize background CPU usage.
+                Timer.publish(every: 30, on: .main, in: .default)
+                    .autoconnect()
+                    .filter { _ in
+                        // Only update images when Ice UI is visible or app is frontmost
+                        appState.navigationState.isIceBarPresented ||
+                        appState.navigationState.isSettingsPresented ||
+                        appState.navigationState.isSearchPresented ||
+                        appState.navigationState.isAppFrontmost
+                    }
+                    .mapToVoid(),
 
                 // Update when the active space or screen parameters change.
                 Publishers.Merge(

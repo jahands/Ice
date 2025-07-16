@@ -66,8 +66,13 @@ final class IceBarColorManager: ObservableObject {
                 DistributedNotificationCenter.default()
                     .publisher(for: DistributedNotificationCenter.interfaceThemeChangedNotification)
                     .mapToVoid(),
-                Timer.publish(every: 15, on: .main, in: .default)
+                Timer.publish(every: 30, on: .main, in: .default)
                     .autoconnect()
+                    .filter { _ in
+                        // Only update colors when Ice Bar is actually visible
+                        guard let appState = iceBarPanel?.appState else { return false }
+                        return appState.navigationState.isIceBarPresented
+                    }
                     .mapToVoid()
             )
             .receive(on: DispatchQueue.main)

@@ -65,14 +65,29 @@ class Permission: ObservableObject, Identifiable {
 
     /// Sets up the internal observers for the permission.
     private func configureCancellables() {
-        timerCancellable = Timer.publish(every: 1, on: .main, in: .default)
+        // Only start timer if permission is not already granted
+        // This dramatically reduces CPU usage for users who already have permissions
+        guard !hasPermission else {
+            return
+        }
+
+        // Use longer interval to reduce CPU usage - permissions don't change frequently
+        timerCancellable = Timer.publish(every: 5, on: .main, in: .default)
             .autoconnect()
             .merge(with: Just(.now))
             .sink { [weak self] _ in
                 guard let self else {
                     return
                 }
-                hasPermission = check()
+                let newPermissionState = check()
+                if newPermissionState != hasPermission {
+                    hasPermission = newPermissionState
+                    // Stop timer once permission is granted
+                    if newPermissionState {
+                        timerCancellable?.cancel()
+                        timerCancellable = nil
+                    }
+                }
             }
     }
 
