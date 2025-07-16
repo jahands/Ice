@@ -117,6 +117,22 @@ final class EventManager {
                 }
                 .store(in: &c)
             }
+
+            // Observe changes to showOnHover setting
+            appState.settingsManager.generalSettingsManager.$showOnHover
+                .dropFirst() // Skip initial value
+                .sink { [weak self] _ in
+                    self?.updateConditionalMonitors()
+                }
+                .store(in: &c)
+
+            // Observe changes to showOnScroll setting
+            appState.settingsManager.generalSettingsManager.$showOnScroll
+                .dropFirst() // Skip initial value
+                .sink { [weak self] _ in
+                    self?.updateConditionalMonitors()
+                }
+                .store(in: &c)
         }
 
         cancellables = c
@@ -126,15 +142,59 @@ final class EventManager {
 
     /// Starts all monitors.
     func startAll() {
-        for monitor in allMonitors {
-            monitor.start()
-        }
+        startEssentialMonitors()
+        startConditionalMonitors()
     }
 
     /// Stops all monitors.
     func stopAll() {
         for monitor in allMonitors {
             monitor.stop()
+        }
+    }
+
+    /// Starts essential monitors that should always be running.
+    private func startEssentialMonitors() {
+        mouseDownMonitor.start()
+        mouseUpMonitor.start()
+        mouseDraggedMonitor.start()
+    }
+
+    /// Starts conditional monitors based on user settings.
+    private func startConditionalMonitors() {
+        guard let appState else { return }
+
+        let settings = appState.settingsManager.generalSettingsManager
+
+        // Only start mouse moved monitor if show on hover is enabled
+        if settings.showOnHover {
+            mouseMovedMonitor.start()
+        }
+
+        // Only start scroll wheel monitor if show on scroll is enabled
+        if settings.showOnScroll {
+            scrollWheelMonitor.start()
+        }
+    }
+
+    /// Updates conditional monitors based on current settings.
+    func updateConditionalMonitors() {
+        guard let appState else { return }
+
+        let settings = appState.settingsManager.generalSettingsManager
+
+        // Handle mouse moved monitor for show on hover
+        if settings.showOnHover {
+            mouseMovedMonitor.start()
+        } else {
+            mouseMovedMonitor.stop()
+        }
+
+        // Handle scroll wheel monitor for show on scroll
+        if settings.showOnScroll {
+            scrollWheelMonitor.start()
+        } else {
+            scrollWheelMonitor.stop()
         }
     }
 }
