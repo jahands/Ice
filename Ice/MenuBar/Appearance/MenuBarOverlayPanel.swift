@@ -191,18 +191,37 @@ final class MenuBarOverlayPanel: NSPanel {
 
         // Continually update the desktop wallpaper. Ideally, we would set up an observer
         // for a wallpaper change notification, but macOS doesn't post one anymore.
-        // Reduced frequency to lower CPU usage.
-        Timer.publish(every: 30, on: .main, in: .default)
+        // Only check when custom shapes are enabled to minimize CPU usage.
+        Timer.publish(every: 60, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.insertUpdateFlag(.desktopWallpaper)
+                guard let self, let appState = self.appState else { return }
+
+                // Only update wallpaper if we're using custom shapes that need it
+                let config = appState.appearanceManager.configuration
+                let needsWallpaper = config.shapeKind != .none
+
+                if needsWallpaper {
+                    self.insertUpdateFlag(.desktopWallpaper)
+                }
             }
             .store(in: &c)
 
-        Timer.publish(every: 30, on: .main, in: .default)
+        Timer.publish(every: 60, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.insertUpdateFlag(.applicationMenuFrame)
+                guard let self, let appState = self.appState else { return }
+
+                // Only update application menu frame if appearance features are active
+                let config = appState.appearanceManager.configuration
+                let needsFrameTracking = config.shapeKind != .none ||
+                                       config.current.hasShadow ||
+                                       config.current.hasBorder ||
+                                       config.current.tintKind != .none
+
+                if needsFrameTracking {
+                    self.insertUpdateFlag(.applicationMenuFrame)
+                }
             }
             .store(in: &c)
 
@@ -299,6 +318,12 @@ final class MenuBarOverlayPanel: NSPanel {
         else {
             return
         }
+
+        // Only capture wallpaper if we actually need it for custom shapes
+        guard let appState, appState.appearanceManager.configuration.shapeKind != .none else {
+            return
+        }
+
         let wallpaper = ScreenCapture.captureWindow(wallpaperWindow.windowID, screenBounds: menuBarWindow.frame)
         if desktopWallpaper?.dataProvider?.data != wallpaper?.dataProvider?.data {
             desktopWallpaper = wallpaper
