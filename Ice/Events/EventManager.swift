@@ -15,6 +15,47 @@ final class EventManager {
     /// Storage for internal observers.
     private var cancellables = Set<AnyCancellable>()
 
+    // MARK: Frame Cache
+    
+    /// Cache for expensive frame calculations
+    private var frameCache = FrameCache()
+    
+    /// Observer for screen parameter changes
+    private var screenChangeObserver: NSObjectProtocol?
+    
+    /// Structure to hold cached frame data
+    private struct FrameCache {
+        var menuBarFrame: CGRect?
+        var applicationMenuFrame: CGRect?
+        var menuBarItemFrames: [CGRect] = []
+        var screenInfo: ScreenInfo?
+        var notchFrame: CGRect?
+        var proximityFrame: CGRect?
+        
+        struct ScreenInfo: Equatable {
+            let displayID: CGDirectDisplayID
+            let frame: CGRect
+            let visibleFrame: CGRect
+            let isFullscreen: Bool
+            
+            static func == (lhs: ScreenInfo, rhs: ScreenInfo) -> Bool {
+                return lhs.displayID == rhs.displayID &&
+                       lhs.frame == rhs.frame &&
+                       lhs.visibleFrame == rhs.visibleFrame &&
+                       lhs.isFullscreen == rhs.isFullscreen
+            }
+        }
+        
+        mutating func invalidate() {
+            menuBarFrame = nil
+            applicationMenuFrame = nil
+            menuBarItemFrames.removeAll()
+            screenInfo = nil
+            notchFrame = nil
+            proximityFrame = nil
+        }
+    }
+
     // MARK: Mouse Movement Debouncing
 
     /// Minimum interval between mouse movement processing (33.33ms for 30Hz).
@@ -108,11 +149,18 @@ final class EventManager {
     init(appState: AppState) {
         self.appState = appState
     }
+    
+    deinit {
+        if let observer = screenChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     /// Sets up the manager.
     func performSetup() {
         startAll()
         configureCancellables()
+        setupScreenChangeObservers()
     }
 
     /// Configures the internal observers for the manager.
@@ -158,6 +206,33 @@ final class EventManager {
         }
 
         cancellables = c
+    }
+    
+    /// Sets up observers for screen configuration changes to invalidate frame cache.
+    private func setupScreenChangeObservers() {
+        // Observe screen parameter changes (resolution, display count, etc.)
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.invalidateFrameCache()
+        }
+        
+        // Observe workspace changes that might affect fullscreen state
+        if let appState {
+            appState.$isActiveSpaceFullscreen
+                .dropFirst()
+                .sink { [weak self] _ in
+                    self?.invalidateFrameCache()
+                }
+                .store(in: &cancellables)
+        }
+    }
+    
+    /// Invalidates the frame cache when screen configuration changes.
+    private func invalidateFrameCache() {
+        frameCache.invalidate()
     }
 
     // MARK: Start/Stop
@@ -586,8 +661,135 @@ extension EventManager {
 // MARK: - Helpers
 
 extension EventManager {
-    /// Returns the best screen to use for event manager calculations.
-    var bestScreen: NSScreen? {
+    // MARK: Cache Helper Methods
+    
+    /// Updates screen info in cache if needed and returns current screen info
+    private func updateCachedScreenInfo() -> FrameCache.ScreenInfo? {
+        guard 
+            let appState,
+            let screen = bestScreenUncached
+        else {
+            return nil
+        }
+        
+        let newScreenInfo = FrameCache.ScreenInfo(
+            displayID: screen.displayID,
+            frame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            isFullscreen: appState.isActiveSpaceFullscreen
+        )
+        
+        if frameCache.screenInfo != newScreenInfo {
+            frameCache.screenInfo = newScreenInfo
+            // Invalidate dependent caches when screen info changes
+            frameCache.menuBarFrame = nil
+            frameCache.applicationMenuFrame = nil
+            frameCache.menuBarItemFrames.removeAll()
+            frameCache.notchFrame = nil
+            frameCache.proximityFrame = nil
+        }
+        
+        return newScreenInfo
+    }
+    
+    /// Gets cached menu bar frame or calculates and caches it
+    private func getCachedMenuBarFrame() -> CGRect? {
+        if let cached = frameCache.menuBarFrame {
+            return cached
+        }
+        
+        guard 
+            let appState,
+            let screen = bestScreen
+        else {
+            return nil
+        }
+        
+        let menuBarFrame: CGRect?
+        
+        if appState.menuBarManager.isMenuBarHiddenBySystem || appState.isActiveSpaceFullscreen {
+            if let menuBarWindow = WindowInfo.getMenuBarWindow(for: screen.displayID) {
+                menuBarFrame = menuBarWindow.frame
+            } else {
+                menuBarFrame = nil
+            }
+        } else {
+            let menuBarHeight: CGFloat = 24
+            menuBarFrame = CGRect(
+                x: screen.frame.origin.x,
+                y: screen.frame.maxY - menuBarHeight,
+                width: screen.frame.width,
+                height: menuBarHeight
+            )
+        }
+        
+        frameCache.menuBarFrame = menuBarFrame
+        return menuBarFrame
+    }
+    
+    /// Gets cached application menu frame or calculates and caches it
+    private func getCachedApplicationMenuFrame() -> CGRect? {
+        if let cached = frameCache.applicationMenuFrame {
+            return cached
+        }
+        
+        guard 
+            let appState,
+            let screen = bestScreen,
+            var applicationMenuFrame = appState.menuBarManager.getApplicationMenuFrame(for: screen.displayID)
+        else {
+            return nil
+        }
+        
+        applicationMenuFrame.size.width += applicationMenuFrame.origin.x - screen.frame.origin.x
+        applicationMenuFrame.origin.x = screen.frame.origin.x
+        
+        frameCache.applicationMenuFrame = applicationMenuFrame
+        return applicationMenuFrame
+    }
+    
+    /// Gets cached menu bar item frames or calculates and caches them
+    private func getCachedMenuBarItemFrames() -> [CGRect] {
+        if !frameCache.menuBarItemFrames.isEmpty {
+            return frameCache.menuBarItemFrames
+        }
+        
+        guard let screen = bestScreen else {
+            return []
+        }
+        
+        let menuBarItems = MenuBarItem.getMenuBarItems(on: screen.displayID, onScreenOnly: true, activeSpaceOnly: true)
+        let frames = menuBarItems.map { $0.frame }
+        
+        frameCache.menuBarItemFrames = frames
+        return frames
+    }
+    
+    /// Gets cached proximity frame or calculates and caches it
+    private func getCachedProximityFrame() -> CGRect? {
+        if let cached = frameCache.proximityFrame {
+            return cached
+        }
+        
+        guard let screen = bestScreen else {
+            return nil
+        }
+        
+        let menuBarHeight: CGFloat = 24
+        let menuBarFrame = CGRect(
+            x: screen.frame.origin.x,
+            y: screen.frame.maxY - menuBarHeight,
+            width: screen.frame.width,
+            height: menuBarHeight
+        )
+        
+        let proximityFrame = menuBarFrame.insetBy(dx: -proximityThreshold, dy: -proximityThreshold)
+        frameCache.proximityFrame = proximityFrame
+        return proximityFrame
+    }
+    
+    /// Returns the best screen to use for event manager calculations (uncached version).
+    private var bestScreenUncached: NSScreen? {
         guard let appState else {
             return nil
         }
@@ -597,27 +799,24 @@ extension EventManager {
             return NSScreen.main
         }
     }
+    
+    /// Returns the best screen to use for event manager calculations.
+    var bestScreen: NSScreen? {
+        updateCachedScreenInfo()
+        return bestScreenUncached
+    }
 
     /// A Boolean value that indicates whether the mouse pointer is within
     /// the bounds of the menu bar.
     var isMouseInsideMenuBar: Bool {
         guard
-            let screen = bestScreen,
-            let appState
+            let appState,
+            let mouseLocation = MouseCursor.locationCoreGraphics,
+            let menuBarFrame = getCachedMenuBarFrame()
         else {
             return false
         }
-        if appState.menuBarManager.isMenuBarHiddenBySystem || appState.isActiveSpaceFullscreen {
-            if
-                let mouseLocation = MouseCursor.locationCoreGraphics,
-                let menuBarWindow = WindowInfo.getMenuBarWindow(for: screen.displayID)
-            {
-                return menuBarWindow.frame.contains(mouseLocation)
-            }
-        } else if let mouseLocation = MouseCursor.locationAppKit {
-            return mouseLocation.y > screen.visibleFrame.maxY && mouseLocation.y <= screen.frame.maxY
-        }
-        return false
+        return menuBarFrame.contains(mouseLocation)
     }
 
     /// A Boolean value that indicates whether the mouse pointer is within
@@ -625,28 +824,21 @@ extension EventManager {
     var isMouseInsideApplicationMenu: Bool {
         guard
             let mouseLocation = MouseCursor.locationCoreGraphics,
-            let screen = bestScreen,
-            let appState,
-            var applicationMenuFrame = appState.menuBarManager.getApplicationMenuFrame(for: screen.displayID)
+            let applicationMenuFrame = getCachedApplicationMenuFrame()
         else {
             return false
         }
-        applicationMenuFrame.size.width += applicationMenuFrame.origin.x - screen.frame.origin.x
-        applicationMenuFrame.origin.x = screen.frame.origin.x
         return applicationMenuFrame.contains(mouseLocation)
     }
 
     /// A Boolean value that indicates whether the mouse pointer is within
     /// the bounds of a menu bar item.
     var isMouseInsideMenuBarItem: Bool {
-        guard
-            let screen = bestScreen,
-            let mouseLocation = MouseCursor.locationCoreGraphics
-        else {
+        guard let mouseLocation = MouseCursor.locationCoreGraphics else {
             return false
         }
-        let menuBarItems = MenuBarItem.getMenuBarItems(on: screen.displayID, onScreenOnly: true, activeSpaceOnly: true)
-        return menuBarItems.contains { $0.frame.contains(mouseLocation) }
+        let menuBarItemFrames = getCachedMenuBarItemFrames()
+        return menuBarItemFrames.contains { $0.contains(mouseLocation) }
     }
 
     /// A Boolean value that indicates whether the mouse pointer is within
@@ -708,24 +900,11 @@ extension EventManager {
     /// the proximity zone around the menu bar.
     var isMouseInMenuBarProximityZone: Bool {
         guard
-            let screen = bestScreen,
-            let mouseLocation = MouseCursor.locationAppKit
+            let mouseLocation = MouseCursor.locationAppKit,
+            let proximityFrame = getCachedProximityFrame()
         else {
             return false
         }
-
-        // Get menu bar frame
-        let menuBarHeight: CGFloat = 24 // Standard menu bar height
-        let menuBarFrame = CGRect(
-            x: screen.frame.origin.x,
-            y: screen.frame.maxY - menuBarHeight,
-            width: screen.frame.width,
-            height: menuBarHeight
-        )
-
-        // Expand the frame by the proximity threshold
-        let proximityFrame = menuBarFrame.insetBy(dx: -proximityThreshold, dy: -proximityThreshold)
-
         return proximityFrame.contains(mouseLocation)
     }
 }
