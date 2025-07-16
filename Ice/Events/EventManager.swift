@@ -14,14 +14,28 @@ final class EventManager {
 
     /// Storage for internal observers.
     private var cancellables = Set<AnyCancellable>()
-    
+
     // MARK: Mouse Movement Debouncing
-    
+
     /// Minimum interval between mouse movement processing (33.33ms for 30Hz).
     private let mouseMovementDebounceInterval: TimeInterval = 1.0 / 30.0
-    
+
     /// Time of last mouse movement processing.
     private var lastMouseMovementProcessTime: DispatchTime = DispatchTime(uptimeNanoseconds: 0)
+
+    // MARK: Proximity-based Monitoring
+
+    /// Distance threshold for proximity detection (in pixels).
+    private let proximityThreshold: CGFloat = 100.0
+
+    /// Timer for periodic proximity checking when full monitoring is disabled.
+    private var proximityCheckTimer: Timer?
+
+    /// Interval for proximity checking when monitoring is disabled (1Hz).
+    private let proximityCheckInterval: TimeInterval = 1.0
+
+    /// Whether mouse is currently in proximity zone.
+    private var isMouseInProximityZone = false
 
     // MARK: Monitors
 
@@ -159,6 +173,7 @@ final class EventManager {
         for monitor in allMonitors {
             monitor.stop()
         }
+        stopProximityTimer()
     }
 
     /// Starts essential monitors that should always be running.
@@ -174,9 +189,9 @@ final class EventManager {
 
         let settings = appState.settingsManager.generalSettingsManager
 
-        // Only start mouse moved monitor if show on hover is enabled
+        // Only start mouse moved monitor if show on hover is enabled (with proximity logic)
         if settings.showOnHover {
-            mouseMovedMonitor.start()
+            updateProximityAwareMonitoring()
         }
 
         // Only start scroll wheel monitor if show on scroll is enabled
@@ -191,11 +206,12 @@ final class EventManager {
 
         let settings = appState.settingsManager.generalSettingsManager
 
-        // Handle mouse moved monitor for show on hover
+        // Handle mouse moved monitor for show on hover with proximity-based logic
         if settings.showOnHover {
-            mouseMovedMonitor.start()
+            updateProximityAwareMonitoring()
         } else {
             mouseMovedMonitor.stop()
+            stopProximityTimer()
         }
 
         // Handle scroll wheel monitor for show on scroll
@@ -412,17 +428,17 @@ extension EventManager {
     }
 
     // MARK: Handle Mouse Movement (Debounced)
-    
+
     private func handleMouseMovement() {
         let currentTime = DispatchTime.now()
         let timeSinceLastProcess = currentTime.uptimeNanoseconds - lastMouseMovementProcessTime.uptimeNanoseconds
         let minIntervalNanoseconds = UInt64(mouseMovementDebounceInterval * 1_000_000_000)
-        
+
         // Skip processing if we haven't reached the minimum interval
         guard timeSinceLastProcess >= minIntervalNanoseconds else {
             return
         }
-        
+
         lastMouseMovementProcessTime = currentTime
         handleShowOnHover()
     }
@@ -508,6 +524,61 @@ extension EventManager {
             hiddenSection.show()
         } else if averageDelta < -5 {
             hiddenSection.hide()
+        }
+    }
+
+    // MARK: Proximity-based Monitoring
+
+    /// Updates mouse monitoring based on proximity to menu bar.
+    private func updateProximityAwareMonitoring() {
+        let currentlyInProximity = isMouseInMenuBarProximityZone
+
+        if currentlyInProximity {
+            // Mouse is near menu bar - start full monitoring
+            if !mouseMovedMonitor.isRunning {
+                mouseMovedMonitor.start()
+            }
+            stopProximityTimer()
+            isMouseInProximityZone = true
+        } else {
+            // Mouse is not near menu bar - check if we should stop monitoring
+            if mouseMovedMonitor.isRunning {
+                mouseMovedMonitor.stop()
+            }
+            startProximityTimer()
+            isMouseInProximityZone = false
+        }
+    }
+
+    /// Starts the proximity checking timer.
+    private func startProximityTimer() {
+        stopProximityTimer()
+        proximityCheckTimer = Timer.scheduledTimer(withTimeInterval: proximityCheckInterval, repeats: true) { [weak self] _ in
+            self?.checkProximityAndUpdateMonitoring()
+        }
+    }
+
+    /// Stops the proximity checking timer.
+    private func stopProximityTimer() {
+        proximityCheckTimer?.invalidate()
+        proximityCheckTimer = nil
+    }
+
+    /// Checks proximity and updates monitoring if needed.
+    @objc private func checkProximityAndUpdateMonitoring() {
+        guard
+            let appState,
+            appState.settingsManager.generalSettingsManager.showOnHover
+        else {
+            stopProximityTimer()
+            return
+        }
+
+        let nowInProximity = isMouseInMenuBarProximityZone
+
+        if nowInProximity && !isMouseInProximityZone {
+            // Mouse entered proximity zone - start full monitoring
+            updateProximityAwareMonitoring()
         }
     }
 }
@@ -631,6 +702,31 @@ extension EventManager {
             return false
         }
         return iceIconFrame.contains(mouseLocation)
+    }
+
+    /// A Boolean value that indicates whether the mouse pointer is within
+    /// the proximity zone around the menu bar.
+    var isMouseInMenuBarProximityZone: Bool {
+        guard
+            let screen = bestScreen,
+            let mouseLocation = MouseCursor.locationAppKit
+        else {
+            return false
+        }
+
+        // Get menu bar frame
+        let menuBarHeight: CGFloat = 24 // Standard menu bar height
+        let menuBarFrame = CGRect(
+            x: screen.frame.origin.x,
+            y: screen.frame.maxY - menuBarHeight,
+            width: screen.frame.width,
+            height: menuBarHeight
+        )
+
+        // Expand the frame by the proximity threshold
+        let proximityFrame = menuBarFrame.insetBy(dx: -proximityThreshold, dy: -proximityThreshold)
+
+        return proximityFrame.contains(mouseLocation)
     }
 }
 

@@ -46,6 +46,11 @@ final class GlobalEventMonitor {
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
     }
+
+    /// A Boolean value that indicates whether the monitor is currently running.
+    var isRunning: Bool {
+        monitor != nil
+    }
 }
 
 extension GlobalEventMonitor {

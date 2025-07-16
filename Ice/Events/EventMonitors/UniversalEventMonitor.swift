@@ -37,6 +37,11 @@ final class UniversalEventMonitor {
         local.stop()
         global.stop()
     }
+
+    /// A Boolean value that indicates whether the monitor is currently running.
+    var isRunning: Bool {
+        local.isRunning || global.isRunning
+    }
 }
 
 extension UniversalEventMonitor {
