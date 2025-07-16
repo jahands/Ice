@@ -10,7 +10,7 @@ RELEASE_APP := $(DERIVED_DATA_DIR)/Build/Products/Release/Ice.app
 SOURCES := $(shell find Ice -name "*.swift" 2>/dev/null)
 
 # Phony targets (commands that don't create files with matching names)
-.PHONY: help run clean lint xcode show-build-dir install dev build build-release
+.PHONY: help run clean lint xcode show-build-dir install dev
 
 # Show available targets
 help:
@@ -74,7 +74,11 @@ show-build-dir:
 # Install the app to /Applications (builds release version first)
 install: $(RELEASE_APP)
 	@echo "Installing Ice.app to /Applications..."
-	@sudo cp -R "$(RELEASE_APP)" /Applications/
+	@if [ -d "/Applications/Ice.app" ]; then \
+		echo "Removing existing Ice.app..."; \
+		sudo rm -rf "/Applications/Ice.app"; \
+	fi
+	@sudo ditto "$(RELEASE_APP)" "/Applications/Ice.app"
 	@echo "✅ Ice.app installed successfully"
 	@echo "You can now launch Ice from Applications or Spotlight"
 
