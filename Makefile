@@ -10,7 +10,7 @@ RELEASE_APP := $(DERIVED_DATA_DIR)/Build/Products/Release/Ice.app
 SOURCES := $(shell find Ice -name "*.swift" 2>/dev/null)
 
 # Phony targets (commands that don't create files with matching names)
-.PHONY: help run clean lint xcode show-build-dir install dev
+.PHONY: help run clean lint xcode show-build-dir install dev reset-permissions
 
 # Show available targets
 help:
@@ -24,6 +24,7 @@ help:
 	@echo "  show-build-dir - Display the DerivedData build directory"
 	@echo "  install       - Build release version and install to /Applications"
 	@echo "  dev           - Development cycle (clean, build, run)"
+	@echo "  reset-permissions - Reset macOS permissions for Ice (fixes accessibility issues)"
 
 # Build the debug app (real target with dependencies)
 $(DEBUG_APP): $(SOURCES) Ice.xcodeproj/project.pbxproj
@@ -81,6 +82,18 @@ install: $(RELEASE_APP)
 	@sudo ditto "$(RELEASE_APP)" "/Applications/Ice.app"
 	@echo "✅ Ice.app installed successfully"
 	@echo "You can now launch Ice from Applications or Spotlight"
+
+# Reset macOS permissions for Ice (fixes accessibility permission issues)
+reset-permissions:
+	@echo "Resetting macOS permissions for Ice..."
+	@echo "This will remove Ice from accessibility permissions so you can re-grant them"
+	@sudo tccutil reset Accessibility com.jordanbaird.Ice 2>/dev/null || true
+	@sudo tccutil reset SystemPolicyAllFiles com.jordanbaird.Ice 2>/dev/null || true
+	@echo "✅ Permissions reset"
+	@echo "Now restart Ice and grant permissions again when prompted"
+	@echo "If that doesn't work, manually remove Ice from:"
+	@echo "  System Settings > Privacy & Security > Accessibility"
+	@echo "  Then restart Ice to be prompted again"
 
 # Quick development cycle: clean, build, and run
 dev: clean build run
