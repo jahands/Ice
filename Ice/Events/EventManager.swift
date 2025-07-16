@@ -14,6 +14,14 @@ final class EventManager {
 
     /// Storage for internal observers.
     private var cancellables = Set<AnyCancellable>()
+    
+    // MARK: Mouse Movement Debouncing
+    
+    /// Minimum interval between mouse movement processing (33.33ms for 30Hz).
+    private let mouseMovementDebounceInterval: TimeInterval = 1.0 / 30.0
+    
+    /// Time of last mouse movement processing.
+    private var lastMouseMovementProcessTime: DispatchTime = DispatchTime(uptimeNanoseconds: 0)
 
     // MARK: Monitors
 
@@ -57,7 +65,7 @@ final class EventManager {
     private(set) lazy var mouseMovedMonitor = UniversalEventMonitor(
         mask: .mouseMoved
     ) { [weak self] event in
-        self?.handleShowOnHover()
+        self?.handleMouseMovement()
         return event
     }
 
@@ -401,6 +409,22 @@ extension EventManager {
             }
             section.controlItem.isVisible = true
         }
+    }
+
+    // MARK: Handle Mouse Movement (Debounced)
+    
+    private func handleMouseMovement() {
+        let currentTime = DispatchTime.now()
+        let timeSinceLastProcess = currentTime.uptimeNanoseconds - lastMouseMovementProcessTime.uptimeNanoseconds
+        let minIntervalNanoseconds = UInt64(mouseMovementDebounceInterval * 1_000_000_000)
+        
+        // Skip processing if we haven't reached the minimum interval
+        guard timeSinceLastProcess >= minIntervalNanoseconds else {
+            return
+        }
+        
+        lastMouseMovementProcessTime = currentTime
+        handleShowOnHover()
     }
 
     // MARK: Handle Show On Hover
