@@ -25,29 +25,28 @@ help:
 	@echo "  install       - Build release version and install to /Applications"
 	@echo "  dev           - Development cycle (clean, build, run)"
 
-# Build the project in debug configuration
-build:
+# Build the debug app (real target with dependencies)
+$(DEBUG_APP): $(SOURCES) Ice.xcodeproj/project.pbxproj
 	xcodebuild -project Ice.xcodeproj -scheme Ice -configuration Debug build
 
-# Build the project in release configuration
-build-release:
+# Build the release app (real target with dependencies)
+$(RELEASE_APP): $(SOURCES) Ice.xcodeproj/project.pbxproj
 	xcodebuild -project Ice.xcodeproj -scheme Ice -configuration Release build
 
+# Convenience targets
+build: $(DEBUG_APP)
+
+build-release: $(RELEASE_APP)
+
 # Run the application
-run: build
+run: $(DEBUG_APP)
 	@echo "Launching Ice.app..."
-	@DERIVED_DATA_PATH=$$(find ~/Library/Developer/Xcode/DerivedData -name "Ice-*" -type d | head -1); \
-	APP_PATH="$$DERIVED_DATA_PATH/Build/Products/Debug/Ice.app"; \
-	if [ -d "$$APP_PATH" ]; then \
-		if [ -f "$$APP_PATH/Contents/MacOS/Ice" ]; then \
-			echo "✅ Launching Ice.app"; \
-			open "$$APP_PATH"; \
-		else \
-			echo "❌ Executable missing at: $$APP_PATH/Contents/MacOS/Ice"; \
-			ls -la "$$APP_PATH/Contents/MacOS/" 2>/dev/null || echo "MacOS directory missing"; \
-		fi \
+	@if [ -f "$(DEBUG_APP)/Contents/MacOS/Ice" ]; then \
+		echo "✅ Launching Ice.app"; \
+		open "$(DEBUG_APP)"; \
 	else \
-		echo "❌ App bundle not found at: $$APP_PATH"; \
+		echo "❌ Executable missing at: $(DEBUG_APP)/Contents/MacOS/Ice"; \
+		ls -la "$(DEBUG_APP)/Contents/MacOS/" 2>/dev/null || echo "MacOS directory missing"; \
 	fi
 
 # Clean build artifacts
@@ -73,18 +72,11 @@ show-build-dir:
 	@find ~/Library/Developer/Xcode/DerivedData -name "Ice-*" -type d | head -1
 
 # Install the app to /Applications (builds release version first)
-install: build-release
-	@DERIVED_DATA_PATH=$$(find ~/Library/Developer/Xcode/DerivedData -name "Ice-*" -type d | head -1); \
-	APP_PATH="$$DERIVED_DATA_PATH/Build/Products/Release/Ice.app"; \
-	if [ -d "$$APP_PATH" ]; then \
-		echo "Installing Ice.app to /Applications..."; \
-		sudo cp -R "$$APP_PATH" /Applications/; \
-		echo "✅ Ice.app installed successfully"; \
-		echo "You can now launch Ice from Applications or Spotlight"; \
-	else \
-		echo "❌ Release build not found at: $$APP_PATH"; \
-		echo "Make sure the release build completed successfully"; \
-	fi
+install: $(RELEASE_APP)
+	@echo "Installing Ice.app to /Applications..."
+	@sudo cp -R "$(RELEASE_APP)" /Applications/
+	@echo "✅ Ice.app installed successfully"
+	@echo "You can now launch Ice from Applications or Spotlight"
 
 # Quick development cycle: clean, build, and run
 dev: clean build run
