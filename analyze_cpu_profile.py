@@ -168,50 +168,52 @@ class CPUProfileAnalyzer:
         return dict(sorted(event_samples.items(), key=lambda x: x[1], reverse=True))
     
     def generate_insights(self, stats: Dict[str, CategoryStats]) -> List[str]:
-        """Generate actionable insights based on analysis"""
-        insights = []
+        """Generate factual observations about CPU usage patterns"""
+        observations = []
         
-        # Check event monitoring overhead
+        # Report event monitoring overhead
         event_stats = stats.get("Event Monitoring", CategoryStats(0, [], 0))
-        if event_stats.percentage > 30:
-            insights.append(
-                f"🔥 HIGH: Event monitoring consuming {event_stats.percentage:.1f}% of CPU - "
-                "Consider reducing global NSEvent monitor frequency or adding debouncing"
-            )
-        elif event_stats.percentage > 15:
-            insights.append(
-                f"⚠️ MEDIUM: Event monitoring consuming {event_stats.percentage:.1f}% of CPU - "
-                "May benefit from optimization"
+        if event_stats.percentage > 0:
+            observations.append(
+                f"📊 Event monitoring: {event_stats.percentage:.1f}% of CPU time"
             )
         
-        # Check Ice-specific overhead
+        # Report Ice-specific overhead  
         ice_stats = stats.get("Ice Application", CategoryStats(0, [], 0))
-        if ice_stats.percentage > 20:
-            insights.append(
-                f"🔥 HIGH: Ice application code consuming {ice_stats.percentage:.1f}% of CPU - "
-                "Review high-frequency operations and caching strategies"
+        if ice_stats.percentage > 0:
+            observations.append(
+                f"🧊 Ice application code: {ice_stats.percentage:.1f}% of CPU time"
             )
         
-        # Check UI overhead
+        # Report UI overhead
         ui_stats = stats.get("UI/SwiftUI", CategoryStats(0, [], 0))
-        if ui_stats.percentage > 25:
-            insights.append(
-                f"⚠️ MEDIUM: UI/SwiftUI consuming {ui_stats.percentage:.1f}% of CPU - "
-                "Consider reducing view updates and using lazy loading"
+        if ui_stats.percentage > 0:
+            observations.append(
+                f"🖼️ UI/SwiftUI: {ui_stats.percentage:.1f}% of CPU time"
             )
         
-        # Check graphics overhead
+        # Report graphics overhead
         gfx_stats = stats.get("Graphics/Display", CategoryStats(0, [], 0))
-        if gfx_stats.percentage > 20:
-            insights.append(
-                f"⚠️ MEDIUM: Graphics/Display consuming {gfx_stats.percentage:.1f}% of CPU - "
-                "Window server communication overhead detected"
+        if gfx_stats.percentage > 0:
+            observations.append(
+                f"🎨 Graphics/Display: {gfx_stats.percentage:.1f}% of CPU time"
             )
         
-        if not insights:
-            insights.append("✅ No major performance issues detected in this sample")
+        # Report system framework overhead
+        sys_stats = stats.get("System Frameworks", CategoryStats(0, [], 0))
+        if sys_stats.percentage > 0:
+            observations.append(
+                f"🔧 System Frameworks: {sys_stats.percentage:.1f}% of CPU time"
+            )
         
-        return insights
+        # Report memory management overhead
+        mem_stats = stats.get("Memory Management", CategoryStats(0, [], 0))
+        if mem_stats.percentage > 0:
+            observations.append(
+                f"💾 Memory Management: {mem_stats.percentage:.1f}% of CPU time"
+            )
+        
+        return observations
     
     def create_visualization(self, stats: Dict[str, CategoryStats]) -> None:
         """Create CPU usage visualization"""
@@ -302,32 +304,21 @@ class CPUProfileAnalyzer:
         """Run complete CPU profile analysis"""
         self.parse_profile()
         stats = self.analyze_hotspots()
-        insights = self.generate_insights(stats)
+        observations = self.generate_insights(stats)
         
         self.console.print(f"\n[bold green]Total Samples:[/bold green] {self.total_samples}")
         self.console.print(f"[bold green]Unique Functions:[/bold green] {len(self.frames)}")
         
         self.print_detailed_report(stats)
         
-        # Print insights
-        self.console.print("\n")
-        insights_panel = Panel("\n".join(insights), title="🎯 Actionable Insights", style="bold")
-        self.console.print(insights_panel)
+        # Print observations
+        if observations:
+            self.console.print("\n")
+            observations_panel = Panel("\n".join(observations), title="📈 CPU Usage Breakdown", style="blue")
+            self.console.print(observations_panel)
         
         # Create visualization
         self.create_visualization(stats)
-        
-        # Performance recommendations
-        recommendations = [
-            "1. Consider adding debouncing to global NSEvent monitors",
-            "2. Profile Ice-specific functions with instruments for deeper analysis", 
-            "3. Implement lazy loading for UI components that update frequently",
-            "4. Cache expensive operations like image processing",
-            "5. Use background queues for non-UI intensive operations"
-        ]
-        
-        rec_panel = Panel("\n".join(recommendations), title="💡 Performance Recommendations", style="green")
-        self.console.print(rec_panel)
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze Ice CPU profile for performance bottlenecks")
