@@ -41,8 +41,8 @@ final class MenuBarItemImageCache: ObservableObject {
 
         if let appState {
             Publishers.Merge3(
-                // Update every 3 seconds at minimum.
-                Timer.publish(every: 3, on: .main, in: .default).autoconnect().mapToVoid(),
+                // Update every 15 seconds at minimum (reduced from 3 seconds to lower CPU usage).
+                Timer.publish(every: 15, on: .main, in: .default).autoconnect().mapToVoid(),
 
                 // Update when the active space or screen parameters change.
                 Publishers.Merge(

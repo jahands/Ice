@@ -66,7 +66,7 @@ final class IceBarColorManager: ObservableObject {
                 DistributedNotificationCenter.default()
                     .publisher(for: DistributedNotificationCenter.interfaceThemeChangedNotification)
                     .mapToVoid(),
-                Timer.publish(every: 5, on: .main, in: .default)
+                Timer.publish(every: 15, on: .main, in: .default)
                     .autoconnect()
                     .mapToVoid()
             )

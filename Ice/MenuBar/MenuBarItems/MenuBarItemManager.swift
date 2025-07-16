@@ -173,15 +173,27 @@ final class MenuBarItemManager: ObservableObject {
     private func configureCancellables() {
         var c = Set<AnyCancellable>()
 
-        Timer.publish(every: 5, on: .main, in: .default)
+        // Use a much longer interval for background updates to reduce CPU usage
+        // Only update frequently when Ice is actively being used
+        Timer.publish(every: 30, on: .main, in: .default)
             .autoconnect()
             .merge(with: Just(.now))
             .sink { [weak self] _ in
                 guard let self else {
                     return
                 }
-                Task {
-                    await self.cacheItemsIfNeeded()
+                // Only cache if Ice is actively being used or settings are open
+                guard let appState = self.appState else { return }
+
+                let shouldCache = appState.navigationState.isIceBarPresented ||
+                                appState.navigationState.isSettingsPresented ||
+                                appState.navigationState.isSearchPresented ||
+                                appState.navigationState.isAppFrontmost
+
+                if shouldCache {
+                    Task {
+                        await self.cacheItemsIfNeeded()
+                    }
                 }
             }
             .store(in: &c)
@@ -198,6 +210,7 @@ final class MenuBarItemManager: ObservableObject {
             }
             .store(in: &c)
 
+        // Only track mouse events when Ice is actively being used to reduce CPU usage
         Publishers.Merge(
             UniversalEventMonitor.publisher(for: mouseTrackingMask),
             RunLoopLocalEventMonitor.publisher(for: mouseTrackingMask, mode: .eventTracking)
@@ -207,6 +220,16 @@ final class MenuBarItemManager: ObservableObject {
             guard let self else {
                 return
             }
+
+            // Only process mouse events if Ice is actively being used
+            guard let appState = self.appState else { return }
+            let isActivelyUsed = appState.navigationState.isIceBarPresented ||
+                               appState.navigationState.isSettingsPresented ||
+                               appState.navigationState.isSearchPresented ||
+                               self.isMovingItem
+
+            guard isActivelyUsed else { return }
+
             switch event.type {
             case .mouseMoved:
                 lastMouseMoveStartDate = .now

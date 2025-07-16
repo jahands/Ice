@@ -141,10 +141,16 @@ final class MenuBarManager: ObservableObject {
             }
             .store(in: &c)
 
-        Timer.publish(every: 5, on: .main, in: .default)
+        // Reduce frequency to lower CPU usage - only update when needed
+        Timer.publish(every: 20, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.updateAverageColorInfo()
+                guard let self else { return }
+                // Only update if Ice UI is visible
+                if appState?.navigationState.isIceBarPresented == true ||
+                   appState?.navigationState.isSettingsPresented == true {
+                    self.updateAverageColorInfo()
+                }
             }
             .store(in: &c)
 

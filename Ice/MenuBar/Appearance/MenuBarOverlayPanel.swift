@@ -191,14 +191,15 @@ final class MenuBarOverlayPanel: NSPanel {
 
         // Continually update the desktop wallpaper. Ideally, we would set up an observer
         // for a wallpaper change notification, but macOS doesn't post one anymore.
-        Timer.publish(every: 5, on: .main, in: .default)
+        // Reduced frequency to lower CPU usage.
+        Timer.publish(every: 30, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.insertUpdateFlag(.desktopWallpaper)
             }
             .store(in: &c)
 
-        Timer.publish(every: 10, on: .main, in: .default)
+        Timer.publish(every: 30, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.insertUpdateFlag(.applicationMenuFrame)
