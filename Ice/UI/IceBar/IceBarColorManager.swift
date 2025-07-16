@@ -68,10 +68,10 @@ final class IceBarColorManager: ObservableObject {
                     .mapToVoid(),
                 Timer.publish(every: 30, on: .main, in: .default)
                     .autoconnect()
-                    .filter { _ in
+                    .filter { [weak iceBarPanel] _ in
                         // Only update colors when Ice Bar is actually visible
-                        guard let appState = iceBarPanel?.appState else { return false }
-                        return appState.navigationState.isIceBarPresented
+                        guard let iceBarPanel else { return false }
+                        return iceBarPanel.isVisible
                     }
                     .mapToVoid()
             )
